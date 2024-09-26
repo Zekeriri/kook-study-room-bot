@@ -1,50 +1,40 @@
 import khl
 from datetime import datetime
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 创建一个机器人实例
 bot = khl.Bot(token='1/MzI2NzM=/cyvZltzOh/GLLotmCqnVKw==')
 
-# 用于存储用户的每日计划，格式为：{'用户ID': {'日期': '计划'}}
-daily_plans = {}
+# 指定文本频道 ID，用于发送消息
+TEXT_CHANNEL_ID = '9348748149902262'
 
-# ping 命令
-@bot.command()
-async def ping(ctx: khl.Message):
-    print("Ping command received")  # 打印调试信息
-    await ctx.reply('Pong!')
+# 监听所有事件
+@bot.on_event('*')
+async def on_any_event(event: khl.Event):
+    logging.info(f'Received event: {event}')  # 打印完整的事件对象
 
-# 添加每日计划的命令
-@bot.command(name='add_plan')  # 确保命令的名称被正确注册
-async def add_plan(ctx: khl.Message, *args):  # 使用 *args 来捕获所有参数
-    plan = ' '.join(args)  # 将所有传入参数组合为一个字符串
-    print(f"Received add_plan command with plan: {plan}")  # 打印调试信息
-    if not plan:  # 检查是否输入了计划内容
-        await ctx.reply("请提供计划内容！正确的命令格式为：!add_plan [你的计划内容]")
-        return
+# 监听语音频道加入事件
+@bot.on_event('VOICE_CHANNEL_MEMBER_ADD')
+async def on_voice_channel_join(event: khl.Event):
+    user_id = str(event.body['user_id'])
+    user = await bot.fetch_user(user_id) # 获取用户信息，以便获取昵称
+    channel = await bot.fetch_public_channel(TEXT_CHANNEL_ID) # 获取文本频道对象
 
-    user_id = str(ctx.author.id)  # 获取用户 ID
-    date = datetime.now().strftime('%Y-%m-%d')  # 获取当前日期
+    logging.info(f'User {user_id} joined voice channel.')
+    await channel.send(f'{user.nickname} 进入了语音频道。')
 
-    # 检查用户是否已经有当天的计划
-    if user_id not in daily_plans:
-        daily_plans[user_id] = {}
+# 监听语音频道离开事件
+@bot.on_event('VOICE_CHANNEL_MEMBER_REMOVE')
+async def on_voice_channel_leave(event: khl.Event):
+    user_id = str(event.body['user_id'])
+    user = await bot.fetch_user(user_id)
+    channel = await bot.fetch_public_channel(TEXT_CHANNEL_ID)
 
-    # 保存计划
-    daily_plans[user_id][date] = plan
-    await ctx.reply(f"你的计划已经添加：{plan}（日期：{date}）")
-
-# 查看当天计划的命令
-@bot.command(name='show_plan')
-async def show_plan(ctx: khl.Message):
-    user_id = str(ctx.author.id)
-    date = datetime.now().strftime('%Y-%m-%d')
-
-    # 检查是否有当天的计划
-    if user_id in daily_plans and date in daily_plans[user_id]:
-        plan = daily_plans[user_id][date]
-        await ctx.reply(f"你今天的计划是：{plan}")
-    else:
-        await ctx.reply("你今天还没有添加计划！")
+    logging.info(f'User {user_id} left voice channel.')
+    await channel.send(f'{user.nickname} 退出了语音频道。')
 
 # 启动机器人
 bot.run()
