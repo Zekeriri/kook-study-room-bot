@@ -126,12 +126,15 @@ async def display_tasks(ctx: khl.Message):
         user = await bot.client.fetch_user(user_id)
         if user and tasks:
             has_tasks = True
-            message += f"**{user.nickname}：**\n"
+            # 使用 `` 包裹用户名，并加粗
+            message += f"**`{user.nickname}`：**\n"
             for i, task in enumerate(tasks):
                 if task['completed']:
-                    message += f"{i + 1}. ~{task['content']}~\n"
+                    # 已完成任务使用删除线，并在末尾加上 "(已完成)"，并使用灰色表示
+                    message += f"{i + 1}. ~~{task['content']}~~ (已完成)\n"
                 else:
-                    message += f"{i + 1}. {task['content']}\n"
+                    # 未完成任务正常显示，并使用加粗表示
+                    message += f"{i + 1}. **{task['content']}**\n"
     if not has_tasks:
         message = "还没有人添加任务。"
     await ctx.reply(message)
@@ -312,7 +315,7 @@ async def today_study_time(ctx: khl.Message):
         user = await bot.client.fetch_user(user_id)
         if user:
             formatted_study_time = format_timedelta(timedelta(seconds=study_time))
-            message += f"{user.nickname}: {formatted_study_time}\n"
+            message += f"**`{user.nickname}`:** {formatted_study_time}\n"
     if message == "**今日学习时长：**\n":
         message = "暂无学习记录。"
     await ctx.reply(message)
@@ -331,7 +334,7 @@ async def weekly_study_time(ctx: khl.Message):
                 if start_time.strftime('%Y-%m-%d') >= current_week_start:
                     weekly_study_time += record['duration']
             formatted_study_time = format_timedelta(timedelta(seconds=weekly_study_time))
-            message += f"{user.nickname}: {formatted_study_time}\n"
+            message += f"**`{user.nickname}`:** {formatted_study_time}\n"
     if message == "**本周学习时长：**\n":
         message = "本周暂无学习记录。"
     await ctx.reply(message)
@@ -350,7 +353,7 @@ async def monthly_study_time(ctx: khl.Message):
                 if start_time.strftime('%Y-%m-%d') >= current_month_start:
                     monthly_study_time += record['duration']
             formatted_study_time = format_timedelta(timedelta(seconds=monthly_study_time))
-            message += f"{user.nickname}: {formatted_study_time}\n"
+            message += f"**`{user.nickname}`:** {formatted_study_time}\n"
     if message == "**本月学习时长：**\n":
         message = "本月暂无学习记录。"
     await ctx.reply(message)
@@ -369,7 +372,7 @@ async def yearly_study_time(ctx: khl.Message):
                 if start_time.strftime('%Y-%m-%d') >= current_year_start:
                     yearly_study_time += record['duration']
             formatted_study_time = format_timedelta(timedelta(seconds=yearly_study_time))
-            message += f"{user.nickname}: {formatted_study_time}\n"
+            message += f"**`{user.nickname}`:** {formatted_study_time}\n"
     if message == "**本年学习时长：**\n":
         message = "本年暂无学习记录。"
     await ctx.reply(message)
@@ -382,7 +385,7 @@ async def total_study_time(ctx: khl.Message):
         user = await bot.client.fetch_user(user_id)
         if user:
             formatted_study_time = format_timedelta(timedelta(seconds=study_time))
-            message += f"{user.nickname}: {formatted_study_time}\n"
+            message += f"**`{user.nickname}`:** {formatted_study_time}\n"
     if message == "**生涯学习时长：**\n":
         message = "暂无学习记录。"
     await ctx.reply(message)
