@@ -3,17 +3,20 @@ from datetime import datetime, timedelta
 import logging
 import json
 from pathlib import Path
+import configparser
 
 from khl import EventTypes
 
 # 配置日志
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# 创建一个机器人实例
-bot = khl.Bot(token='1/MzI2NzM=/cyvZltzOh/GLLotmCqnVKw==')  # 请确保 Token 正确
+# 读取本地配置文件
+config = configparser.ConfigParser()
+config.read('config.ini')  # 假设配置文件名为 config.ini
 
-# 指定文本频道 ID，用于发送消息
-TEXT_CHANNEL_ID = '9348748149902262'
+# 从配置文件中获取 token 和 TEXT_CHANNEL_ID
+bot = khl.Bot(token=config.get('kook', 'token'))
+TEXT_CHANNEL_ID = config.get('kook', 'text_channel_id')
 
 # 数据存储文件路径
 DATA_FILE_PATH = 'kook_study_data.json'
