@@ -1,11 +1,10 @@
-import khl
 from datetime import datetime, timedelta
 import logging
 import json
 from pathlib import Path
 import configparser
 
-from khl import EventTypes
+from khl import EventTypes, Bot, Message, Event
 
 # 配置日志
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,7 +14,7 @@ config = configparser.ConfigParser()
 config.read('config.ini')  # 假设配置文件名为 config.ini
 
 # 从配置文件中获取 token 和 TEXT_CHANNEL_ID
-bot = khl.Bot(token=config.get('kook', 'token'))
+bot = Bot(token=config.get('kook', 'token'))
 TEXT_CHANNEL_ID = config.get('kook', 'text_channel_id')
 
 # 数据存储文件路径
@@ -91,20 +90,20 @@ def format_timedelta(td):
 # 加载数据
 data = load_or_init_data()
 
-# 监听所有事件（用于调试）
-@bot.on_event('*')
-async def on_any_event(event: khl.Event):
-    print(f'Received event: {event}')
+# # 监听所有事件（用于调试）
+# @bot.on_event('*')
+# async def on_any_event(event: EventTypes):
+#     print(f'Received event: {event}')
 
 # ping 命令
 @bot.command()
-async def ping(ctx: khl.Message):
+async def ping(ctx: Message):
     print("Ping command received")  # 打印调试信息
     await ctx.reply('Pong!')
 
 # 帮助指令
 @bot.command(name='帮助')
-async def help_command(ctx: khl.Message):
+async def help_command(ctx: Message):
     message = (
         "**可用指令：**\n\n"
         "**任务管理**\n"
@@ -122,7 +121,7 @@ async def help_command(ctx: khl.Message):
     await ctx.reply(message)
 
 # 独立的显示任务函数
-async def display_tasks(ctx: khl.Message):
+async def display_tasks(ctx: Message):
     message = "**今日任务：**\n"
     has_tasks = False
     for user_id, tasks in data['tasks'].items():
@@ -169,7 +168,7 @@ async def get_study_time_message(ctx, title, study_time_data, time_filter=None):
 
 # 添加任务
 @bot.command(name='添加任务')
-async def add_task(ctx: khl.Message, task_content: str = None):
+async def add_task(ctx: Message, task_content: str = None):
     if not task_content:
         await ctx.reply("请提供任务内容。正确用法：`/添加任务 [任务内容]`")
         return
@@ -194,7 +193,7 @@ async def add_task(ctx: khl.Message, task_content: str = None):
 
 # 删除任务
 @bot.command(name='删除任务')
-async def delete_task(ctx: khl.Message, task_index: int = None):
+async def delete_task(ctx: Message, task_index: int = None):
     if task_index is None:
         await ctx.reply("请提供要删除的任务编号。正确用法：`/删除任务 [任务编号]`")
         return
@@ -220,7 +219,7 @@ async def delete_task(ctx: khl.Message, task_index: int = None):
 
 # 完成任务
 @bot.command(name='完成任务')
-async def complete_task(ctx: khl.Message, task_index: int = None):
+async def complete_task(ctx: Message, task_index: int = None):
     if task_index is None:
         await ctx.reply("请提供要完成的任务编号。正确用法：`/完成任务 [任务编号]`")
         return
@@ -246,12 +245,12 @@ async def complete_task(ctx: khl.Message, task_index: int = None):
 
 # 查看任务
 @bot.command(name='查看任务')
-async def view_tasks(ctx: khl.Message):
+async def view_tasks(ctx: Message):
     await display_tasks(ctx)
 
 # 用户加入语音频道
 @bot.on_event(EventTypes.JOINED_CHANNEL)
-async def on_join_event(bot: khl.Bot, event: khl.Event):
+async def on_join_event(bot: Bot, event: Event):
     channel = await bot.client.fetch_public_channel(TEXT_CHANNEL_ID)
     if channel:  # 检查是否成功获取到频道对象
         user_id = str(event.body['user_id'])
@@ -272,7 +271,7 @@ async def on_join_event(bot: khl.Bot, event: khl.Event):
 
 # 用户退出语音频道
 @bot.on_event(EventTypes.EXITED_CHANNEL)
-async def on_exit_event(bot: khl.Bot, event: khl.Event):
+async def on_exit_event(bot: Bot, event: Event):
     channel = await bot.client.fetch_public_channel(TEXT_CHANNEL_ID)
     if channel:  # 检查是否成功获取到频道对象
         user_id = str(event.body['user_id'])
@@ -336,13 +335,13 @@ def update_study_time(user_id, study_duration, period):
 
 # 今日学习时长
 @bot.command(name='今日学习时长')
-async def today_study_time(ctx: khl.Message):
+async def today_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '今日学习时长', data['daily_study_time'])
     await ctx.reply(message)
 
 # 本周学习时长
 @bot.command(name='本周学习时长')
-async def weekly_study_time(ctx: khl.Message):
+async def weekly_study_time(ctx: Message):
     current_week_start = get_current_week_start()
     message = await get_study_time_message(
         ctx,
@@ -354,7 +353,7 @@ async def weekly_study_time(ctx: khl.Message):
 
 # 本月学习时长
 @bot.command(name='本月学习时长')
-async def monthly_study_time(ctx: khl.Message):
+async def monthly_study_time(ctx: Message):
     current_month_start = get_current_month_start()
     message = await get_study_time_message(
         ctx,
@@ -366,7 +365,7 @@ async def monthly_study_time(ctx: khl.Message):
 
 # 本年学习时长
 @bot.command(name='本年学习时长')
-async def yearly_study_time(ctx: khl.Message):
+async def yearly_study_time(ctx: Message):
     current_year_start = get_current_year_start()
     message = await get_study_time_message(
         ctx,
@@ -378,7 +377,7 @@ async def yearly_study_time(ctx: khl.Message):
 
 # 生涯学习时长
 @bot.command(name='生涯学习时长')
-async def total_study_time(ctx: khl.Message):
+async def total_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '生涯学习时长', data['total_study_time'])
     await ctx.reply(message)
 
