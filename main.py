@@ -29,6 +29,7 @@ MAX_TASKS_PER_DAY = 10
 # 用于存储用户加入频道的时间
 join_times = {}
 
+
 # 加载数据或初始化
 def load_or_init_data():
     data_file = Path(DATA_FILE_PATH)
@@ -43,13 +44,21 @@ def load_or_init_data():
             'weekly_study_time': {},  # {user_id: float()}
             'monthly_study_time': {},  # {user_id: float()}
             'yearly_study_time': {},  # {user_id: float()}
-            'total_study_time': {}  # {user_id: float()}
+            'total_study_time': {},  # {user_id: float()}
+            'last_reset': {  # 记录最后重置时间
+                'daily': None,
+                'weekly': None,
+                'monthly': None,
+                'yearly': None
+            }
         }
+
 
 # 保存数据
 def save_data(data):
     with open(DATA_FILE_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 # 获取当前日期（从凌晨 5 点开始）
 def get_current_date():
@@ -57,6 +66,7 @@ def get_current_date():
     if now.hour < DAY_START_HOUR:
         now -= timedelta(days=1)
     return now.strftime('%Y-%m-%d')
+
 
 # 获取当前周的第一天（周一）
 def get_current_week_start():
@@ -66,6 +76,7 @@ def get_current_week_start():
     week_start = now - timedelta(days=now.weekday())
     return week_start.strftime('%Y-%m-%d')
 
+
 # 获取当前月的第一天
 def get_current_month_start():
     now = datetime.now()
@@ -73,6 +84,7 @@ def get_current_month_start():
         now -= timedelta(days=1)
     month_start = now.replace(day=1)
     return month_start.strftime('%Y-%m-%d')
+
 
 # 获取当前年的第一天
 def get_current_year_start():
@@ -82,24 +94,55 @@ def get_current_year_start():
     year_start = now.replace(month=1, day=1)
     return year_start.strftime('%Y-%m-%d')
 
+
 # 格式化时间差，去掉微秒部分
 def format_timedelta(td):
     total_seconds = int(td.total_seconds())
     return str(timedelta(seconds=total_seconds))
 
+
+# 检查并重置数据
+def check_and_reset(data, period):
+    now = datetime.now()
+    if period == 'daily':
+        current_period_start = get_current_date()
+    elif period == 'weekly':
+        current_period_start = get_current_week_start()
+    elif period == 'monthly':
+        current_period_start = get_current_month_start()
+    elif period == 'yearly':
+        current_period_start = get_current_year_start()
+    else:
+        return  # 无效的周期
+
+    last_reset = data['last_reset'].get(period)
+
+    if last_reset != current_period_start:
+        if period == 'daily':
+            data['daily_study_time'] = {}
+            data['tasks'] = {}
+        elif period == 'weekly':
+            data['weekly_study_time'] = {}
+        elif period == 'monthly':
+            data['monthly_study_time'] = {}
+        elif period == 'yearly':
+            data['yearly_study_time'] = {}
+        # 更新最后重置时间
+        data['last_reset'][period] = current_period_start
+        save_data(data)
+        logging.info(f"已重置 {period} 数据。")
+
+
 # 加载数据
 data = load_or_init_data()
 
-# # 监听所有事件（用于调试）
-# @bot.on_event('*')
-# async def on_any_event(event: EventTypes):
-#     print(f'Received event: {event}')
 
 # ping 命令
 @bot.command()
 async def ping(ctx: Message):
     print("Ping command received")  # 打印调试信息
     await ctx.reply('Pong!')
+
 
 # 帮助指令
 @bot.command(name='帮助')
@@ -120,6 +163,7 @@ async def help_command(ctx: Message):
     )
     await ctx.reply(message)
 
+
 # 独立的显示任务函数
 async def display_tasks(ctx: Message):
     message = "**今日任务：**\n"
@@ -132,7 +176,7 @@ async def display_tasks(ctx: Message):
             message += f"**`{user.nickname}`：**\n"
             for i, task in enumerate(tasks):
                 if task['completed']:
-                    # 已完成任务使用删除线，并在末尾加上 "(已完成)"，并使用灰色表示
+                    # 已完成任务使用删除线，并在末尾加上 "(已完成)"
                     message += f"{i + 1}. ~~{task['content']}~~ (已完成)\n"
                 else:
                     # 未完成任务正常显示，并使用加粗表示
@@ -141,28 +185,61 @@ async def display_tasks(ctx: Message):
         message = "还没有人添加任务。"
     await ctx.reply(message)
 
+
 # 独立的显示时间函数
-async def get_study_time_message(ctx, title, study_time_data, time_filter=None):
+async def get_study_time_message(ctx, title, study_time_data, period=None):
+    if period:
+        check_and_reset(data, period)
+
     message = f"**{title}：**\n"
     for user_id, study_time in study_time_data.items():
         user = await bot.client.fetch_user(user_id)
         if user:
-            if time_filter is None:  # 处理生涯学习时长的情况
+            if period is None:  # 处理生涯学习时长的情况
                 filtered_study_time = study_time
             else:
-                study_times = data['study_times'][user_id]
-                filtered_study_time = sum(
-                    record['duration']
-                    for record in study_times
-                    if time_filter(datetime.strptime(record['start_time'], "%Y-%m-%d %H:%M:%S"))
-                )
+                study_times = data['study_times'].get(user_id, [])
+                if period == 'daily':
+                    current_period_start = get_current_date()
+                elif period == 'weekly':
+                    current_period_start = get_current_week_start()
+                elif period == 'monthly':
+                    current_period_start = get_current_month_start()
+                elif period == 'yearly':
+                    current_period_start = get_current_year_start()
+                else:
+                    current_period_start = None
+
+                if current_period_start:
+                    if period == 'daily':
+                        start_datetime = datetime.strptime(current_period_start, "%Y-%m-%d")
+                    elif period == 'weekly':
+                        start_datetime = datetime.strptime(current_period_start, "%Y-%m-%d")
+                    elif period == 'monthly':
+                        start_datetime = datetime.strptime(current_period_start, "%Y-%m-%d")
+                    elif period == 'yearly':
+                        start_datetime = datetime.strptime(current_period_start, "%Y-%m-%d")
+                    else:
+                        start_datetime = None
+
+                    if start_datetime:
+                        filtered_study_time = sum(
+                            record['duration']
+                            for record in study_times
+                            if datetime.strptime(record['start_time'], "%Y-%m-%d %H:%M:%S") >= start_datetime
+                        )
+                    else:
+                        filtered_study_time = 0
+                else:
+                    filtered_study_time = 0
+
             formatted_study_time = format_timedelta(timedelta(seconds=filtered_study_time))
             message += f"**`{user.nickname}`:** {formatted_study_time}\n"
     if message == f"**{title}：**\n":
-        if time_filter is None:
+        if period is None:
             message = "暂无学习记录。"
         else:
-            message = f"{title}暂无学习记录。"
+            message = f"{title} 暂无学习记录。"
     return message
 
 
@@ -191,6 +268,7 @@ async def add_task(ctx: Message, task_content: str = None):
     await ctx.reply(f"任务 '{task_content}' 添加成功！")
     await display_tasks(ctx)  # 自动触发查看任务
 
+
 # 删除任务
 @bot.command(name='删除任务')
 async def delete_task(ctx: Message, task_index: int = None):
@@ -216,6 +294,7 @@ async def delete_task(ctx: Message, task_index: int = None):
     save_data(data)
     await ctx.reply("任务删除成功！")
     await display_tasks(ctx)  # 自动触发查看任务
+
 
 # 完成任务
 @bot.command(name='完成任务')
@@ -243,10 +322,12 @@ async def complete_task(ctx: Message, task_index: int = None):
     await ctx.reply("任务完成！")
     await display_tasks(ctx)  # 自动触发查看任务
 
+
 # 查看任务
 @bot.command(name='查看任务')
 async def view_tasks(ctx: Message):
     await display_tasks(ctx)
+
 
 # 用户加入语音频道
 @bot.on_event(EventTypes.JOINED_CHANNEL)
@@ -263,11 +344,13 @@ async def on_join_event(bot: Bot, event: Event):
             if user_id not in data['study_times']:
                 data['study_times'][user_id] = []
 
-            await bot.client.send(target=channel, content=f'{user.nickname} 在 {join_time.strftime("%Y-%m-%d %H:%M:%S")} 开始了学习。')
+            await bot.client.send(target=channel,
+                                  content=f'{user.nickname} 在 {join_time.strftime("%Y-%m-%d %H:%M:%S")} 开始了学习。')
         else:
             print(f"Failed to fetch user with ID {user_id}")
     else:
         print(f'Failed to fetch channel with ID {TEXT_CHANNEL_ID}')
+
 
 # 用户退出语音频道
 @bot.on_event(EventTypes.EXITED_CHANNEL)
@@ -296,7 +379,8 @@ async def on_exit_event(bot: Bot, event: Event):
                 update_study_time(user_id, study_duration, 'yearly')
 
                 # 更新总学习时长
-                data['total_study_time'][user_id] = data['total_study_time'].get(user_id, 0) + study_duration.total_seconds()
+                data['total_study_time'][user_id] = data['total_study_time'].get(user_id,
+                                                                                 0) + study_duration.total_seconds()
 
                 del join_times[user_id]
                 save_data(data)
@@ -308,10 +392,6 @@ async def on_exit_event(bot: Bot, event: Event):
                     target=channel,
                     content=f'{user.nickname} 在 {leave_time.strftime("%Y-%m-%d %H:%M:%S")} 结束了学习，本次学习时长为 {formatted_study_duration}。'
                 )
-
-                # 每天凌晨 5 点清空任务列表和每日学习时长
-                if leave_time.hour == DAY_START_HOUR and leave_time.minute == 0:
-                    reset_daily_data()
             else:
                 await bot.client.send(target=channel, content=f'{user.nickname} 离开了频道。')
         else:
@@ -319,61 +399,51 @@ async def on_exit_event(bot: Bot, event: Event):
     else:
         print(f'Failed to fetch channel with ID {TEXT_CHANNEL_ID}')
 
+
 # 更新学习时长（每日、每周、每月、每年）
 def update_study_time(user_id, study_duration, period):
     if period == 'daily':
+        check_and_reset(data, 'daily')
         data['daily_study_time'][user_id] = data['daily_study_time'].get(user_id, 0) + study_duration.total_seconds()
     elif period == 'weekly':
-        current_week_start = get_current_week_start()
+        check_and_reset(data, 'weekly')
         data['weekly_study_time'][user_id] = data['weekly_study_time'].get(user_id, 0) + study_duration.total_seconds()
     elif period == 'monthly':
-        current_month_start = get_current_month_start()
-        data['monthly_study_time'][user_id] = data['monthly_study_time'].get(user_id, 0) + study_duration.total_seconds()
+        check_and_reset(data, 'monthly')
+        data['monthly_study_time'][user_id] = data['monthly_study_time'].get(user_id,
+                                                                             0) + study_duration.total_seconds()
     elif period == 'yearly':
-        current_year_start = get_current_year_start()
+        check_and_reset(data, 'yearly')
         data['yearly_study_time'][user_id] = data['yearly_study_time'].get(user_id, 0) + study_duration.total_seconds()
+
 
 # 今日学习时长
 @bot.command(name='今日学习时长')
 async def today_study_time(ctx: Message):
-    message = await get_study_time_message(ctx, '今日学习时长', data['daily_study_time'])
+    message = await get_study_time_message(ctx, '今日学习时长', data['daily_study_time'], period='daily')
     await ctx.reply(message)
+
 
 # 本周学习时长
 @bot.command(name='本周学习时长')
 async def weekly_study_time(ctx: Message):
-    current_week_start = get_current_week_start()
-    message = await get_study_time_message(
-        ctx,
-        '本周学习时长',
-        data['weekly_study_time'],
-        lambda start_time: start_time.strftime('%Y-%m-%d') >= current_week_start
-    )
+    message = await get_study_time_message(ctx, '本周学习时长', data['weekly_study_time'], period='weekly')
     await ctx.reply(message)
+
 
 # 本月学习时长
 @bot.command(name='本月学习时长')
 async def monthly_study_time(ctx: Message):
-    current_month_start = get_current_month_start()
-    message = await get_study_time_message(
-        ctx,
-        '本月学习时长',
-        data['monthly_study_time'],
-        lambda start_time: start_time.strftime('%Y-%m-%d') >= current_month_start
-    )
+    message = await get_study_time_message(ctx, '本月学习时长', data['monthly_study_time'], period='monthly')
     await ctx.reply(message)
+
 
 # 本年学习时长
 @bot.command(name='本年学习时长')
 async def yearly_study_time(ctx: Message):
-    current_year_start = get_current_year_start()
-    message = await get_study_time_message(
-        ctx,
-        '本年学习时长',
-        data['yearly_study_time'],
-        lambda start_time: start_time.strftime('%Y-%m-%d') >= current_year_start
-    )
+    message = await get_study_time_message(ctx, '本年学习时长', data['yearly_study_time'], period='yearly')
     await ctx.reply(message)
+
 
 # 生涯学习时长
 @bot.command(name='生涯学习时长')
@@ -381,12 +451,6 @@ async def total_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '生涯学习时长', data['total_study_time'])
     await ctx.reply(message)
 
-# 每天凌晨 5 点清空任务列表和每日学习时长
-def reset_daily_data():
-    data['tasks'] = {}
-    data['daily_study_time'] = {}
-    save_data(data)
-    logging.info("已重置每日任务和学习时长。")
 
 # 启动机器人
 bot.run()
