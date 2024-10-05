@@ -246,6 +246,7 @@ async def get_study_time_message(ctx, title, study_time_data, period=None):
 # 添加任务
 @bot.command(name='添加任务')
 async def add_task(ctx: Message, task_content: str = None):
+    check_and_reset(data, 'daily')  # 在添加任务时调用 check_and_reset 函数
     if not task_content:
         await ctx.reply("请提供任务内容。正确用法：`/添加任务 [任务内容]`")
         return
@@ -326,6 +327,7 @@ async def complete_task(ctx: Message, task_index: int = None):
 # 查看任务
 @bot.command(name='查看任务')
 async def view_tasks(ctx: Message):
+    check_and_reset(data, 'daily')  # 在查看任务时调用 check_and_reset 函数
     await display_tasks(ctx)
 
 
