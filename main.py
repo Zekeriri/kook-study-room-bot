@@ -146,10 +146,19 @@ def check_and_reset(data, period):
 data = load_or_init_data()
 
 
+# 辅助函数：发送消息
+async def send_message(channel_id, message):
+    try:
+        ch = await bot.client.fetch_public_channel(channel_id)
+        await bot.client.send(ch, message)
+    except Exception as e:
+        logging.error(f"发送消息时出错（频道ID={channel_id}）：{e}")
+
+
 # ping 命令
 @bot.command()
 async def ping(ctx: Message):
-    print("Ping command received")  # 打印调试信息
+    logging.debug("收到 Ping 命令")
     await ctx.reply('Pong!')
 
 
@@ -186,11 +195,11 @@ async def display_tasks(ctx: Message):
     message = "**今日任务：**\n"
     has_tasks = False
     for user_id, tasks in data['tasks'].items():
-        user = await bot.client.fetch_user(user_id)
+        user = await bot.fetch_user(user_id)
         if user and tasks:
             has_tasks = True
             # 使用 `` 包裹用户名，并加粗
-            nickname = user.nickname if user.nickname else user.username
+            nickname = user.nickname if hasattr(user, 'nickname') and user.nickname else user.username
             message += f"**`{nickname}`：**\n"
             for i, task in enumerate(tasks):
                 if task['completed']:
@@ -201,7 +210,7 @@ async def display_tasks(ctx: Message):
                     message += f"{i + 1}. **{task['content']}**\n"
     if not has_tasks:
         message = "还没有人添加任务。"
-    await ctx.reply(message)
+    await send_message(ctx.channel.id, message)
 
 
 # 独立的显示时间函数
@@ -211,7 +220,7 @@ async def get_study_time_message(ctx, title, study_time_data, period=None):
 
     message = f"**{title}：**\n"
     for user_id, study_time in study_time_data.items():
-        user = await bot.client.fetch_user(user_id)
+        user = await bot.fetch_user(user_id)
         if user:
             if period is None:  # 处理生涯学习时长的情况
                 filtered_study_time = study_time
@@ -246,7 +255,7 @@ async def get_study_time_message(ctx, title, study_time_data, period=None):
                     filtered_study_time = 0
 
             formatted_study_time = format_timedelta(timedelta(seconds=filtered_study_time))
-            nickname = user.nickname if user.nickname else user.username
+            nickname = user.nickname if hasattr(user, 'nickname') and user.nickname else user.username
             message += f"**`{nickname}`:** {formatted_study_time}\n"
     if message == f"**{title}：**\n":
         if period is None:
@@ -347,75 +356,83 @@ async def view_tasks(ctx: Message):
 # 用户加入语音频道
 @bot.on_event(EventTypes.JOINED_CHANNEL)
 async def on_join_event(bot: Bot, event: Event):
-    channel = await bot.client.fetch_public_channel(TEXT_CHANNEL_ID)
-    if channel:  # 检查是否成功获取到频道对象
-        user_id = str(event.body['user_id'])
-        user = await bot.client.fetch_user(user_id)  # 获取用户信息
-        if user:
-            join_time = datetime.now()  # 获取当前时间
-            join_times[user_id] = join_time
+    try:
+        channel = await bot.client.fetch_public_channel(TEXT_CHANNEL_ID)
+        if channel:  # 检查是否成功获取到频道对象
+            user_id = str(event.body['user_id'])
+            user = await bot.fetch_user(user_id)  # 获取用户信息
+            if user:
+                join_time = datetime.now()  # 获取当前时间
+                join_times[user_id] = join_time
 
-            # 初始化用户的学习时长记录
-            if user_id not in data['study_times']:
-                data['study_times'][user_id] = []
+                # 初始化用户的学习时长记录
+                if user_id not in data['study_times']:
+                    data['study_times'][user_id] = []
 
-            nickname = user.nickname if user.nickname else user.username
-            await bot.client.send(target=channel,
-                                  content=f'{nickname} 开始了学习。')
+                nickname = user.nickname if hasattr(user, 'nickname') and user.nickname else user.username
+                await bot.client.send(channel, f'{nickname} 开始了学习。')
+                logging.info(f"{nickname} 加入了频道，开始学习。")
+            else:
+                logging.warning(f"未能获取用户信息：用户ID={user_id}")
         else:
-            print(f"Failed to fetch user with ID {user_id}")
-    else:
-        print(f'Failed to fetch channel with ID {TEXT_CHANNEL_ID}')
+            logging.error(f'未能获取频道对象，频道ID={TEXT_CHANNEL_ID}')
+    except Exception as e:
+        logging.error(f"处理用户加入频道事件时出错：{e}")
 
 
 # 用户退出语音频道
 @bot.on_event(EventTypes.EXITED_CHANNEL)
 async def on_exit_event(bot: Bot, event: Event):
-    channel = await bot.client.fetch_public_channel(TEXT_CHANNEL_ID)
-    if channel:  # 检查是否成功获取到频道对象
-        user_id = str(event.body['user_id'])
-        user = await bot.client.fetch_user(user_id)  # 获取用户信息
-        if user:
-            if user_id in join_times:
-                join_time = join_times[user_id]
-                leave_time = datetime.now()
-                study_duration = leave_time - join_time
+    try:
+        channel = await bot.client.fetch_public_channel(TEXT_CHANNEL_ID)
+        if channel:  # 检查是否成功获取到频道对象
+            user_id = str(event.body['user_id'])
+            user = await bot.fetch_user(user_id)  # 获取用户信息
+            if user:
+                if user_id in join_times:
+                    join_time = join_times[user_id]
+                    leave_time = datetime.now()
+                    study_duration = leave_time - join_time
 
-                # 记录学习时长
-                data['study_times'][user_id].append({
-                    'start_time': join_time.strftime("%Y-%m-%d %H:%M:%S"),
-                    'end_time': leave_time.strftime("%Y-%m-%d %H:%M:%S"),
-                    'duration': study_duration.total_seconds()
-                })
+                    # 记录学习时长
+                    data['study_times'][user_id].append({
+                        'start_time': join_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        'end_time': leave_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        'duration': study_duration.total_seconds()
+                    })
 
-                # 更新每日、每周、每月、每年的学习时长
-                update_study_time(user_id, study_duration, 'daily')
-                update_study_time(user_id, study_duration, 'weekly')
-                update_study_time(user_id, study_duration, 'monthly')
-                update_study_time(user_id, study_duration, 'yearly')
+                    # 更新每日、每周、每月、每年的学习时长
+                    update_study_time(user_id, study_duration, 'daily')
+                    update_study_time(user_id, study_duration, 'weekly')
+                    update_study_time(user_id, study_duration, 'monthly')
+                    update_study_time(user_id, study_duration, 'yearly')
 
-                # 更新总学习时长
-                data['total_study_time'][user_id] = data['total_study_time'].get(user_id,
-                                                                                 0) + study_duration.total_seconds()
+                    # 更新总学习时长
+                    data['total_study_time'][user_id] = data['total_study_time'].get(user_id,
+                                                                                     0) + study_duration.total_seconds()
 
-                del join_times[user_id]
-                save_data(data)
+                    del join_times[user_id]
+                    save_data(data)
 
-                # 格式化 study_duration
-                formatted_study_duration = format_timedelta(study_duration)
+                    # 格式化 study_duration
+                    formatted_study_duration = format_timedelta(study_duration)
 
-                nickname = user.nickname if user.nickname else user.username
-                await bot.client.send(
-                    target=channel,
-                    content=f'{nickname} 结束了学习，本次学习时长为 {formatted_study_duration}。'
-                )
+                    nickname = user.nickname if hasattr(user, 'nickname') and user.nickname else user.username
+                    await bot.client.send(
+                        channel,
+                        f'{nickname} 结束了学习，本次学习时长为 {formatted_study_duration}。'
+                    )
+                    logging.info(f"{nickname} 结束了学习，本次学习时长为 {formatted_study_duration}。")
+                else:
+                    nickname = user.nickname if hasattr(user, 'nickname') and user.nickname else user.username
+                    await bot.client.send(channel, f'{nickname} 离开了频道。')
+                    logging.info(f"{nickname} 离开了频道。")
             else:
-                nickname = user.nickname if user.nickname else user.username
-                await bot.client.send(target=channel, content=f'{nickname} 离开了频道。')
+                logging.warning(f"未能获取用户信息：用户ID={user_id}")
         else:
-            print(f"Failed to fetch user with ID {user_id}")
-    else:
-        print(f'Failed to fetch channel with ID {TEXT_CHANNEL_ID}')
+            logging.error(f'未能获取频道对象，频道ID={TEXT_CHANNEL_ID}')
+    except Exception as e:
+        logging.error(f"处理用户退出频道事件时出错：{e}")
 
 
 # 更新学习时长（每日、每周、每月、每年）
@@ -439,35 +456,35 @@ def update_study_time(user_id, study_duration, period):
 @bot.command(name='今日学习时长')
 async def today_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '今日学习时长', data['daily_study_time'], period='daily')
-    await ctx.reply(message)
+    await send_message(ctx.channel.id, message)
 
 
 # 本周学习时长
 @bot.command(name='本周学习时长')
 async def weekly_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '本周学习时长', data['weekly_study_time'], period='weekly')
-    await ctx.reply(message)
+    await send_message(ctx.channel.id, message)
 
 
 # 本月学习时长
 @bot.command(name='本月学习时长')
 async def monthly_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '本月学习时长', data['monthly_study_time'], period='monthly')
-    await ctx.reply(message)
+    await send_message(ctx.channel.id, message)
 
 
 # 本年学习时长
 @bot.command(name='本年学习时长')
 async def yearly_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '本年学习时长', data['yearly_study_time'], period='yearly')
-    await ctx.reply(message)
+    await send_message(ctx.channel.id, message)
 
 
 # 生涯学习时长
 @bot.command(name='生涯学习时长')
 async def total_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '生涯学习时长', data['total_study_time'])
-    await ctx.reply(message)
+    await send_message(ctx.channel.id, message)
 
 
 # 新增部分：阅读速度记录功能
@@ -586,7 +603,7 @@ async def record_reading_speed(ctx: Message, total_words: int = None, *reading_t
 
     # 自动调用查看阅读数据
     reading_data_message = await generate_reading_data_message(user_id)
-    await ctx.reply(reading_data_message)
+    await send_message(TEXT_CHANNEL_ID, reading_data_message)
 
 
 # 查看阅读记录
@@ -599,7 +616,7 @@ async def view_reading_records(ctx: Message):
         await ctx.reply("还没有阅读记录。")
         # 自动调用查看阅读数据
         reading_data_message = await generate_reading_data_message(user_id)
-        await ctx.reply(reading_data_message)
+        await send_message(TEXT_CHANNEL_ID, reading_data_message)
         return
 
     # 获取最近10条记录
@@ -620,7 +637,7 @@ async def view_reading_records(ctx: Message):
 
     # 自动调用查看阅读数据
     reading_data_message = await generate_reading_data_message(user_id)
-    await ctx.reply(reading_data_message)
+    await send_message(TEXT_CHANNEL_ID, reading_data_message)
 
 
 # 删除阅读记录
@@ -637,7 +654,7 @@ async def delete_reading_record(ctx: Message, record_index: int = None):
         await ctx.reply("还没有阅读记录。")
         # 自动调用查看阅读数据
         reading_data_message = await generate_reading_data_message(user_id)
-        await ctx.reply(reading_data_message)
+        await send_message(TEXT_CHANNEL_ID, reading_data_message)
         return
 
     # 记录编号从1开始
@@ -672,7 +689,7 @@ async def delete_reading_record(ctx: Message, record_index: int = None):
 
     # 自动调用查看阅读数据
     reading_data_message = await generate_reading_data_message(user_id)
-    await ctx.reply(reading_data_message)
+    await send_message(TEXT_CHANNEL_ID, reading_data_message)
 
 
 # 查看阅读数据分析
@@ -680,7 +697,7 @@ async def delete_reading_record(ctx: Message, record_index: int = None):
 async def view_reading_data(ctx: Message):
     user_id = str(ctx.author_id)
     reading_data_message = await generate_reading_data_message(user_id)
-    await ctx.reply(reading_data_message)
+    await send_message(TEXT_CHANNEL_ID, reading_data_message)
 
 
 # 番茄钟命令
@@ -693,10 +710,12 @@ async def pomodoro(ctx: Message, work_duration: int = 25, break_duration: int = 
         return
 
     await ctx.reply(f"番茄钟已启动！工作 {work_duration} 分钟，休息 {break_duration} 分钟。加油！")
+    logging.info(f"用户 {user_id} 启动番茄钟：工作 {work_duration} 分钟，休息 {break_duration} 分钟")
 
     # 创建一个异步任务来处理番茄钟
     task = asyncio.create_task(run_pomodoro(bot, ctx, user_id, work_duration, break_duration))
     pomodoro_tasks[user_id] = task
+    logging.info(f"已为用户 {user_id} 创建番茄钟任务")
 
 
 # 取消番茄钟命令
@@ -711,28 +730,71 @@ async def cancel_pomodoro(ctx: Message):
     # 取消任务
     pomodoro_tasks[user_id].cancel()
     await ctx.reply("您的番茄钟已取消。")
+    logging.info(f"用户 {user_id} 取消了番茄钟任务")
 
 
 # 番茄钟的异步逻辑
 async def run_pomodoro(bot: Bot, ctx: Message, user_id: str, work_duration: int, break_duration: int):
     try:
+        logging.info(f"番茄钟已启动：用户ID={user_id}, 工作时间={work_duration}分钟, 休息时间={break_duration}分钟")
+
         # 工作阶段
         await asyncio.sleep(work_duration * 60)  # 转换为秒
-        user = await bot.client.fetch_user(user_id)
+        user = await bot.fetch_user(user_id)
         if user:
-            await bot.client.send(target=ctx.channel_id, content=f"{user.username}，工作时间到了！休息一下吧。")
+            message = f"{user.username}，工作时间到了！休息一下吧。"
+            logging.info(f"发送工作结束消息到频道 {TEXT_CHANNEL_ID}: {message}")
+            await send_message(TEXT_CHANNEL_ID, message)
+        else:
+            logging.warning(f"未能获取用户信息：用户ID={user_id}")
 
         # 休息阶段
         await asyncio.sleep(break_duration * 60)
         if user:
-            await bot.client.send(target=ctx.channel_id,
-                                  content=f"{user.username}，休息时间结束，准备开始下一个番茄钟吧！")
+            message = f"{user.username}，休息时间结束，准备开始下一个番茄钟吧！"
+            logging.info(f"发送休息结束消息到频道 {TEXT_CHANNEL_ID}: {message}")
+            await send_message(TEXT_CHANNEL_ID, message)
     except asyncio.CancelledError:
+        logging.info(f"番茄钟已取消：用户ID={user_id}")
+        user = await bot.fetch_user(user_id)
         if user:
-            await bot.client.send(target=ctx.channel_id, content=f"{user.username}，您的番茄钟已被取消。")
+            message = f"{user.username}，您的番茄钟已被取消。"
+            await send_message(TEXT_CHANNEL_ID, message)
+    except Exception as e:
+        logging.error(f"运行番茄钟时出错（用户ID={user_id}）：{e}")
     finally:
         # 移除用户的任务
-        del pomodoro_tasks[user_id]
+        pomodoro_tasks.pop(user_id, None)
+        logging.info(f"已移除番茄钟任务：用户ID={user_id}")
+
+
+# 测试命令：测试发送消息
+@bot.command(name='测试发送')
+async def test_send(ctx: Message):
+    try:
+        await send_message(TEXT_CHANNEL_ID, "这是一个测试消息。")
+        await ctx.reply("测试消息已发送。")
+        logging.info("测试消息发送成功。")
+    except Exception as e:
+        logging.error(f"发送测试消息时出错：{e}")
+        await ctx.reply("发送测试消息时出错。")
+
+
+# 测试命令：测试获取用户
+@bot.command(name='测试用户')
+async def test_fetch_user(ctx: Message):
+    user_id = str(ctx.author_id)
+    try:
+        user = await bot.fetch_user(user_id)
+        if user:
+            await ctx.reply(f"成功获取用户：{user.username}")
+            logging.info(f"成功获取用户：{user.username}")
+        else:
+            await ctx.reply("未能获取用户信息。")
+            logging.warning("未能获取用户信息。")
+    except Exception as e:
+        await ctx.reply("获取用户信息时出错。")
+        logging.error(f"获取用户信息时出错：{e}")
 
 
 # 启动机器人
