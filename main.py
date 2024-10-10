@@ -3,11 +3,12 @@ import logging
 import json
 from pathlib import Path
 import configparser
+import asyncio
 
 from khl import EventTypes, Bot, Message, Event
 
-# # 配置日志
-# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# 配置日志
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 读取本地配置文件
 config = configparser.ConfigParser()
@@ -28,6 +29,10 @@ MAX_TASKS_PER_DAY = 10
 
 # 用于存储用户加入频道的时间
 join_times = {}
+
+# 用于存储用户的番茄钟任务
+pomodoro_tasks = {}
+
 
 # 加载数据或初始化
 def load_or_init_data():
@@ -57,10 +62,12 @@ def load_or_init_data():
             'reading_records': {}  # {user_id: [{'total_words': int, 'reading_times': [float], 'timestamp': str}, ...]}
         }
 
+
 # 保存数据
 def save_data(data):
     with open(DATA_FILE_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 # 获取当前日期（从凌晨 5 点开始）
 def get_current_date():
@@ -68,6 +75,7 @@ def get_current_date():
     if now.hour < DAY_START_HOUR:
         now -= timedelta(days=1)
     return now.strftime('%Y-%m-%d')
+
 
 # 获取当前周的第一天（周一）
 def get_current_week_start():
@@ -77,6 +85,7 @@ def get_current_week_start():
     week_start = now - timedelta(days=now.weekday())
     return week_start.strftime('%Y-%m-%d')
 
+
 # 获取当前月的第一天
 def get_current_month_start():
     now = datetime.now()
@@ -84,6 +93,7 @@ def get_current_month_start():
         now -= timedelta(days=1)
     month_start = now.replace(day=1)
     return month_start.strftime('%Y-%m-%d')
+
 
 # 获取当前年的第一天
 def get_current_year_start():
@@ -93,10 +103,12 @@ def get_current_year_start():
     year_start = now.replace(month=1, day=1)
     return year_start.strftime('%Y-%m-%d')
 
+
 # 格式化时间差，去掉微秒部分
 def format_timedelta(td):
     total_seconds = int(td.total_seconds())
     return str(timedelta(seconds=total_seconds))
+
 
 # 检查并重置数据
 def check_and_reset(data, period):
@@ -129,14 +141,17 @@ def check_and_reset(data, period):
         save_data(data)
         logging.info(f"已重置 {period} 数据。")
 
+
 # 加载数据
 data = load_or_init_data()
+
 
 # ping 命令
 @bot.command()
 async def ping(ctx: Message):
     print("Ping command received")  # 打印调试信息
     await ctx.reply('Pong!')
+
 
 # 帮助指令
 @bot.command(name='帮助')
@@ -158,9 +173,13 @@ async def help_command(ctx: Message):
         "- `/添加阅读记录 [总词数] [阅读时间1(第一遍)] [阅读时间2(第二遍)] ...`：\n  记录本次的阅读速度记录本次的阅读速度。\n  一篇文章可能需要多次阅读才能完全理解，因此可以输入多个阅读时间。\n  速度表示看懂文章的平均速度。\n"
         "- `/查看阅读记录`：查看已记录的阅读速度，显示最近10条。\n"
         "- `/删除阅读记录 [记录编号]`：删除指定编号的阅读记录。\n"
-        "- `/查看阅读数据`：查看阅读数据分析。\n"
+        "- `/查看阅读数据`：查看阅读数据分析。\n\n"
+        "**番茄钟**\n"
+        "- `/番茄钟 [工作时间（分钟）] [休息时间（分钟）]`：启动一个番茄钟。默认工作时间为25分钟，休息时间为5分钟。\n"
+        "- `/取消番茄钟`：取消当前的番茄钟。\n"
     )
     await ctx.reply(message)
+
 
 # 独立的显示任务函数
 async def display_tasks(ctx: Message):
@@ -183,6 +202,7 @@ async def display_tasks(ctx: Message):
     if not has_tasks:
         message = "还没有人添加任务。"
     await ctx.reply(message)
+
 
 # 独立的显示时间函数
 async def get_study_time_message(ctx, title, study_time_data, period=None):
@@ -235,6 +255,7 @@ async def get_study_time_message(ctx, title, study_time_data, period=None):
             message = f"{title} 暂无学习记录。"
     return message
 
+
 # 添加任务
 @bot.command(name='添加任务')
 async def add_task(ctx: Message, task_content: str = None):
@@ -260,6 +281,7 @@ async def add_task(ctx: Message, task_content: str = None):
     save_data(data)
     await ctx.reply(f"任务 '{task_content}' 添加成功！")
     await display_tasks(ctx)  # 自动触发查看任务
+
 
 # 删除任务
 @bot.command(name='删除任务')
@@ -287,6 +309,7 @@ async def delete_task(ctx: Message, task_index: int = None):
     await ctx.reply("任务删除成功！")
     await display_tasks(ctx)  # 自动触发查看任务
 
+
 # 完成任务
 @bot.command(name='完成任务')
 async def complete_task(ctx: Message, task_index: int = None):
@@ -313,11 +336,13 @@ async def complete_task(ctx: Message, task_index: int = None):
     await ctx.reply("任务完成！")
     await display_tasks(ctx)  # 自动触发查看任务
 
+
 # 查看任务
 @bot.command(name='查看任务')
 async def view_tasks(ctx: Message):
     check_and_reset(data, 'daily')  # 在查看任务时调用 check_and_reset 函数
     await display_tasks(ctx)
+
 
 # 用户加入语音频道
 @bot.on_event(EventTypes.JOINED_CHANNEL)
@@ -341,6 +366,7 @@ async def on_join_event(bot: Bot, event: Event):
             print(f"Failed to fetch user with ID {user_id}")
     else:
         print(f'Failed to fetch channel with ID {TEXT_CHANNEL_ID}')
+
 
 # 用户退出语音频道
 @bot.on_event(EventTypes.EXITED_CHANNEL)
@@ -369,7 +395,8 @@ async def on_exit_event(bot: Bot, event: Event):
                 update_study_time(user_id, study_duration, 'yearly')
 
                 # 更新总学习时长
-                data['total_study_time'][user_id] = data['total_study_time'].get(user_id, 0) + study_duration.total_seconds()
+                data['total_study_time'][user_id] = data['total_study_time'].get(user_id,
+                                                                                 0) + study_duration.total_seconds()
 
                 del join_times[user_id]
                 save_data(data)
@@ -390,6 +417,7 @@ async def on_exit_event(bot: Bot, event: Event):
     else:
         print(f'Failed to fetch channel with ID {TEXT_CHANNEL_ID}')
 
+
 # 更新学习时长（每日、每周、每月、每年）
 def update_study_time(user_id, study_duration, period):
     if period == 'daily':
@@ -400,10 +428,12 @@ def update_study_time(user_id, study_duration, period):
         data['weekly_study_time'][user_id] = data['weekly_study_time'].get(user_id, 0) + study_duration.total_seconds()
     elif period == 'monthly':
         check_and_reset(data, 'monthly')
-        data['monthly_study_time'][user_id] = data['monthly_study_time'].get(user_id, 0) + study_duration.total_seconds()
+        data['monthly_study_time'][user_id] = data['monthly_study_time'].get(user_id,
+                                                                             0) + study_duration.total_seconds()
     elif period == 'yearly':
         check_and_reset(data, 'yearly')
         data['yearly_study_time'][user_id] = data['yearly_study_time'].get(user_id, 0) + study_duration.total_seconds()
+
 
 # 今日学习时长
 @bot.command(name='今日学习时长')
@@ -411,11 +441,13 @@ async def today_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '今日学习时长', data['daily_study_time'], period='daily')
     await ctx.reply(message)
 
+
 # 本周学习时长
 @bot.command(name='本周学习时长')
 async def weekly_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '本周学习时长', data['weekly_study_time'], period='weekly')
     await ctx.reply(message)
+
 
 # 本月学习时长
 @bot.command(name='本月学习时长')
@@ -423,17 +455,20 @@ async def monthly_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '本月学习时长', data['monthly_study_time'], period='monthly')
     await ctx.reply(message)
 
+
 # 本年学习时长
 @bot.command(name='本年学习时长')
 async def yearly_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '本年学习时长', data['yearly_study_time'], period='yearly')
     await ctx.reply(message)
 
+
 # 生涯学习时长
 @bot.command(name='生涯学习时长')
 async def total_study_time(ctx: Message):
     message = await get_study_time_message(ctx, '生涯学习时长', data['total_study_time'])
     await ctx.reply(message)
+
 
 # 新增部分：阅读速度记录功能
 
@@ -488,6 +523,7 @@ async def generate_reading_data_message(user_id):
     message += f"- 阅读速度趋势：{trend}\n"
 
     return message
+
 
 # 记录阅读速度
 @bot.command(name='添加阅读记录')
@@ -552,6 +588,7 @@ async def record_reading_speed(ctx: Message, total_words: int = None, *reading_t
     reading_data_message = await generate_reading_data_message(user_id)
     await ctx.reply(reading_data_message)
 
+
 # 查看阅读记录
 @bot.command(name='查看阅读记录')
 async def view_reading_records(ctx: Message):
@@ -584,6 +621,7 @@ async def view_reading_records(ctx: Message):
     # 自动调用查看阅读数据
     reading_data_message = await generate_reading_data_message(user_id)
     await ctx.reply(reading_data_message)
+
 
 # 删除阅读记录
 @bot.command(name='删除阅读记录')
@@ -636,12 +674,66 @@ async def delete_reading_record(ctx: Message, record_index: int = None):
     reading_data_message = await generate_reading_data_message(user_id)
     await ctx.reply(reading_data_message)
 
+
 # 查看阅读数据分析
 @bot.command(name='查看阅读数据')
 async def view_reading_data(ctx: Message):
     user_id = str(ctx.author_id)
     reading_data_message = await generate_reading_data_message(user_id)
     await ctx.reply(reading_data_message)
+
+
+# 番茄钟命令
+@bot.command(name='番茄钟')
+async def pomodoro(ctx: Message, work_duration: int = 25, break_duration: int = 5):
+    user_id = str(ctx.author_id)
+
+    if user_id in pomodoro_tasks:
+        await ctx.reply("您已经有一个正在进行的番茄钟。请先完成当前的番茄钟。")
+        return
+
+    await ctx.reply(f"番茄钟已启动！工作 {work_duration} 分钟，休息 {break_duration} 分钟。加油！")
+
+    # 创建一个异步任务来处理番茄钟
+    task = asyncio.create_task(run_pomodoro(bot, ctx, user_id, work_duration, break_duration))
+    pomodoro_tasks[user_id] = task
+
+
+# 取消番茄钟命令
+@bot.command(name='取消番茄钟')
+async def cancel_pomodoro(ctx: Message):
+    user_id = str(ctx.author_id)
+
+    if user_id not in pomodoro_tasks:
+        await ctx.reply("您当前没有进行中的番茄钟。")
+        return
+
+    # 取消任务
+    pomodoro_tasks[user_id].cancel()
+    await ctx.reply("您的番茄钟已取消。")
+
+
+# 番茄钟的异步逻辑
+async def run_pomodoro(bot: Bot, ctx: Message, user_id: str, work_duration: int, break_duration: int):
+    try:
+        # 工作阶段
+        await asyncio.sleep(work_duration * 60)  # 转换为秒
+        user = await bot.client.fetch_user(user_id)
+        if user:
+            await bot.client.send(target=ctx.channel_id, content=f"{user.username}，工作时间到了！休息一下吧。")
+
+        # 休息阶段
+        await asyncio.sleep(break_duration * 60)
+        if user:
+            await bot.client.send(target=ctx.channel_id,
+                                  content=f"{user.username}，休息时间结束，准备开始下一个番茄钟吧！")
+    except asyncio.CancelledError:
+        if user:
+            await bot.client.send(target=ctx.channel_id, content=f"{user.username}，您的番茄钟已被取消。")
+    finally:
+        # 移除用户的任务
+        del pomodoro_tasks[user_id]
+
 
 # 启动机器人
 bot.run()
