@@ -179,7 +179,7 @@ async def help_command(ctx: Message):
         "- `/本年学习时长`：查询本年的学习时长。\n"
         "- `/生涯学习时长`：查询生涯总学习时长。\n\n"
         "**阅读速度记录**\n"
-        "- `/添加阅读记录 [总词数] [阅读时间1(第一遍)] [阅读时间2(第二遍)] ...`：\n  记录本次的阅读速度记录本次的阅读速度。\n  一篇文章可能需要多次阅读才能完全理解，因此可以输入多个阅读时间。\n  速度表示看懂文章的平均速度。\n"
+        "- `/添加阅读记录 [总词数] [阅读时间1(第一遍)(分钟)] [阅读时间2(第二遍)(分钟)] ...`：\n  记录本次的阅读速度记录本次的阅读速度。\n  一篇文章可能需要多次阅读才能完全理解，因此可以输入多个阅读时间。\n  速度表示看懂文章的平均速度。\n"
         "- `/查看阅读记录`：查看已记录的阅读速度，显示最近10条。\n"
         "- `/删除阅读记录 [记录编号]`：删除指定编号的阅读记录。\n"
         "- `/查看阅读数据`：查看阅读数据分析。\n\n"
@@ -629,7 +629,7 @@ async def view_reading_records(ctx: Message):
         for r_idx, time in enumerate(record['reading_times'], start=1):
             reading_time_formatted += f"  - 第{r_idx}遍：{time} 分钟\n"
         message += (
-            f"{idx}. 总词数：{record['total_words']}\n"
+            f"{len(records) - idx + 1}. 总词数：{record['total_words']}\n"
             f"   阅读时间：\n{reading_time_formatted}"
         )
 
@@ -681,7 +681,7 @@ async def delete_reading_record(ctx: Message, record_index: int = None):
             for r_idx, time in enumerate(record['reading_times'], start=1):
                 reading_time_formatted += f"  - 第{r_idx}遍：{time} 分钟\n"
             message += (
-                f"{idx}. 总词数：{record['total_words']}\n"
+                f"{len(records) - idx + 1}. 总词数：{record['total_words']}\n"
                 f"   阅读时间：\n{reading_time_formatted}"
             )
 
@@ -742,7 +742,7 @@ async def run_pomodoro(bot: Bot, ctx: Message, user_id: str, work_duration: int,
         await asyncio.sleep(work_duration * 60)  # 转换为秒
         user = await bot.fetch_user(user_id)
         if user:
-            message = f"{user.username}，工作时间到了！休息一下吧。"
+            message = f"{user.username}，工作时间结束了！休息一下吧。"
             logging.info(f"发送工作结束消息到频道 {TEXT_CHANNEL_ID}: {message}")
             await send_message(TEXT_CHANNEL_ID, message)
         else:
